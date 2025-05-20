@@ -1,0 +1,56 @@
+from pyspark.ml.feature import VectorAssembler, StandardScaler
+from pyspark.mllib.classification import LogisticRegressionWithLBFGS, LogisticRegressionModel
+from pyspark.mllib.regression import LabeledPoint
+from pyspark.sql import SparkSession
+from pyspark.mllib.linalg import Vectors
+import time
+
+# 1. Inisialisasi Spark
+spark = SparkSession.builder \
+    .appName("Logistic Regression") \
+    .getOrCreate()
+
+# 2. Load Dataset
+def load_spark_dataset(spark, file_path):
+    # Load dataset from CSV
+    return spark.read.csv(file_path, header=True, inferSchema=True)
+
+# Load dataset
+dataset_path = "/spark/spark-3.5.3-bin-hadoop3/data/generated_dataset_spark/small_data.csv"
+dataset = load_spark_dataset(spark, dataset_path)
+
+# 3. Preprocessing Data
+def preprocess_data(df):
+    feature_cols = [col for col in df.columns if col.startswith("feature_")]
+    assembler = VectorAssembler(inputCols=feature_cols, outputCol="features_vector")
+    assembled_df = assembler.transform(df)
+
+    scaler = StandardScaler(inputCol="features_vector", outputCol="features_scaled")
+    scaler_model = scaler.fit(assembled_df)
+    scaled_df = scaler_model.transform(assembled_df)
+    return scaled_df.select("features_scaled", "label")
+
+data_preprocessed = preprocess_data(dataset)
+
+# 4. Konversi ke RDD
+rdd_data = data_preprocessed.rdd.map(
+    lambda row: LabeledPoint(
+        row["label"],
+        Vectors.dense(row["features_scaled"].toArray())  # Convert DenseVector to Vectors
+    )
+)
+
+# 5. Training Model
+def train_reglog_model(data_rdd):
+    start_time = time.time()
+    model = LogisticRegressionWithLBFGS.train(data_rdd)
+    end_time = time.time()
+    training_time = end_time - start_time
+    return model, training_time
+
+model, training_time = train_reglog_model(rdd_data)
+
+print(f"Model Training Time = {training_time} seconds")
+
+# Stop Spark session
+spark.stop()
