@@ -1,0 +1,57 @@
+import time
+from pyspark.sql import SparkSession
+from pyspark.ml.feature import VectorAssembler, StandardScaler
+from pyspark.ml.classification import MultilayerPerceptronClassifier
+
+# 1. Inisialisasi Spark
+spark = SparkSession.builder \
+    .appName("NeuralNetworkClassification - Training Only") \
+    .getOrCreate()
+
+# 2. Load Dataset
+def load_spark_dataset(spark, file_path):
+    # Load dataset from CSV
+    return spark.read.csv(file_path, header=True, inferSchema=True)
+
+# Load dataset
+dataset_path = "/spark/spark-3.5.3-bin-hadoop3/data/generated_dataset_spark/small_data.csv"
+dataset = load_spark_dataset(spark, dataset_path)
+
+# 3. Preprocessing Data
+def preprocess_data(df):
+    feature_cols = [col for col in df.columns if col.startswith("feature_")]
+    assembler = VectorAssembler(inputCols=feature_cols, outputCol="features_vector")
+    assembled_df = assembler.transform(df)
+
+    scaler = StandardScaler(inputCol="features_vector", outputCol="features_scaled")
+    scaler_model = scaler.fit(assembled_df)
+    scaled_df = scaler_model.transform(assembled_df)
+    return scaled_df.select("features_scaled", "label")
+
+data_preprocessed = preprocess_data(dataset)
+
+# 4. Model Neural Network
+def train_nn(df, layers):
+    # Model Neural Network
+    nn = MultilayerPerceptronClassifier(layers=layers, featuresCol="features_scaled", labelCol="label", seed=42)
+
+    # Measure training time
+    start_time = time.time()
+
+    # Train model
+    model = nn.fit(df)
+
+    # Catat waktu selesai
+    end_time = time.time()
+    training_time = end_time - start_time
+    print(f"Training Time: {training_time:.2f} seconds")
+    return model
+
+# Arsitektur Neural Network: 40 input nodes, 100 hidden nodes, 50 hidden nodes, 25 hidden nodes, 2 output nodes
+layers = [20, 128, 64, 32, 2]
+
+# 5. Train Model
+model = train_nn(data_preprocessed, layers)
+
+# Stop SparkSession
+spark.stop()
